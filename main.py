@@ -4,7 +4,7 @@ from discord.ext import commands
 from flask import Flask
 from threading import Thread
 
-# --- KEEP-ALIVE SERVER ---
+# --- KEEP-ALIVE SERVER FOR RENDER ---
 app = Flask('')
 
 @app.route('/')
@@ -22,9 +22,10 @@ keep_alive()
 
 # --- BOT SETUP ---
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix=">", intents=intents)
+# Set help_command=None to disable default text help menu
+bot = commands.Bot(command_prefix=">", intents=intents, help_command=None)
 
-# Simple in-memory balance tracker (use SQLite/PostgreSQL for long-term production)
+# Simple in-memory balance tracker (resets on restart)
 balances = {}
 
 @bot.event
@@ -32,6 +33,44 @@ async def on_ready():
     # Sync slash commands globally across all servers
     await bot.tree.sync()
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
+
+# --- CUSTOM HELP COMMAND ---
+@bot.hybrid_command(name="help", description="Shows a list of all available commands.")
+async def help_command(ctx):
+    embed = discord.Embed(
+        title="🤖 All-In-One Bot Commands",
+        description="Here is a list of commands you can use with prefix `>` or slash `/`:",
+        color=discord.Color.blue()
+    )
+
+    # Utilities Category
+    embed.add_field(
+        name="🛠️ Utilities",
+        value="`>ping` or `/ping` - Check bot latency\n"
+              "`>userinfo [@user]` or `/userinfo` - Get user details\n"
+              "`>help` or `/help` - Show this menu",
+        inline=False
+    )
+
+    # Moderation Category
+    embed.add_field(
+        name="🛡️ Moderation",
+        value="`>kick <@user> [reason]` - Kick a member\n"
+              "`>ban <@user> [reason]` - Ban a member\n"
+              "`>clear ` - Purge messages from channel",
+        inline=False
+    )
+
+    # Economy Category
+    embed.add_field(
+        name="💰 Economy",
+        value="`>balance [@user]` - Check wallet balance\n"
+              "`>work` - Work to earn coins (60s cooldown)",
+        inline=False
+    )
+
+    embed.set_footer(text="Custom Bot Services by @plzdie")
+    await ctx.send(embed=embed)
 
 # --- UTILITIES ---
 @bot.hybrid_command(name="ping", description="Check bot latency")
