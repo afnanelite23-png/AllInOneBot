@@ -48,7 +48,11 @@ async def help_command(ctx):
               "`>help` or `/help` - Show this menu.",
         inline=False
     )
-    embed.set_footer(text="Bot Owner announcement")
+    # Displays the command sender's display name and avatar
+    embed.set_footer(
+        text=f"Requested by {ctx.author.display_name}",
+        icon_url=ctx.author.display_avatar.url
+    )
     await ctx.send(embed=embed)
 
 # --- UTILITIES ---
@@ -71,7 +75,11 @@ async def dmall(ctx, *, message: str):
         description=message,
         color=discord.Color.gold()
     )
-    embed.set_footer(text="Bot Owner announcement")
+    # Footer set to the display name and avatar of whoever ran >dmall or /dmall
+    embed.set_footer(
+        text=f"Sent by {ctx.author.display_name}",
+        icon_url=ctx.author.display_avatar.url
+    )
 
     # Initial status response
     status_msg = await ctx.send(f"⏳ Starting DM broadcast to **{len(ctx.guild.members)}** members...")
