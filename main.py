@@ -1,112 +1,68 @@
-import os
 import asyncio
+import os
 import discord
 from discord.ext import commands
-from flask import Flask
-from threading import Thread
 
-# --- KEEP-ALIVE SERVER FOR RENDER ---
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "DM Announcement Bot is operational!"
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-keep_alive()
-
-# --- BOT SETUP ---
 intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True  # Required to fetch all server members
+intents.members = True
+intents.moderation = True
 
-bot = commands.Bot(command_prefix=">", intents=intents, help_command=None)
+bot = commands.Bot(command_prefix="!", intents=intents)
+
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
-    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
+  print(f"Logged in as {bot.user.name}")
 
-# --- CUSTOM HELP COMMAND ---
-@bot.hybrid_command(name="help", description="Shows available commands.")
-async def help_command(ctx):
-    embed = discord.Embed(
-        title="🤖 Announcement Bot Commands",
-        description="Commands available for server administrators:",
-        color=discord.Color.blue()
-    )
-    embed.add_field(
-        name="📢 Announcements",
-        value="`>dmall ` or `/dmall ` - Broadcast a DM to all server members.\n"
-              "`>ping` or `/ping` - Check bot latency.\n"
-              "`>help` or `/help` - Show this menu.",
-        inline=False
-    )
-    # Displays the command sender's display name and avatar
-    embed.set_footer(
-        text=f"Requested by {ctx.author.display_name}",
-        icon_url=ctx.author.display_avatar.url
-    )
-    await ctx.send(embed=embed)
 
-# --- UTILITIES ---
-@bot.hybrid_command(name="ping", description="Check bot latency")
-async def ping(ctx):
-    latency = round(bot.latency * 1000)
-    await ctx.send(f"🏓 Pong! Latency: `{latency}ms`")
+@bot.command(name="autoban")
+@commands.has_permissions(ban_members=True, view_audit_log=True)
+async def auto_ban(ctx, limit: int = 150):
+  """Bans recent members/raiders automatically up to a specified limit or rate limit."""
+  await ctx.message.delete()
+  status_msg = await ctx.send(
+      f"🛡️ Scanning and banning up to {limit} recent members..."
+  )
 
-# --- DM ALL COMMAND ---
-@bot.hybrid_command(name="dmall", description="Send a direct message to all server members (Admins only).")
-@commands.has_permissions(administrator=True)
-async def dmall(ctx, *, message: str):
-    await ctx.defer()  # Prevents interaction timeout for slash commands
-    
-    successful = 0
-    failed = 0
+  banned_count = 0
+  failed_count = 0
 
-    embed = discord.Embed(
-        title=f"📢 Announcement from {ctx.guild.name}",
-        description=message,
-        color=discord.Color.gold()
-    )
-    # Footer set to the display name and avatar of whoever ran >dmall or /dmall
-    embed.set_footer(
-        text=f"Sent by {ctx.author.display_name}",
-        icon_url=ctx.author.display_avatar.url
+  try:
+    async for member in ctx.guild.fetch_members(limit=limit):
+      if member.id == bot.user.id or member.guild_permissions.administrator:
+        continue
+
+      try:
+        await ctx.guild.ban(
+            member, reason="Raid protection - Auto ban", delete_message_days=1
+        )
+        banned_count += 1
+        await asyncio.sleep(0.5)
+
+      except discord.HTTPException as e:
+        if e.status == 429:
+          await ctx.send(
+              "⚠️ Hit a Discord Rate Limit (429). Pausing operation.",
+              delete_after=15,
+          )
+          break
+        else:
+          failed_count += 1
+
+    await status_msg.edit(
+        content=(
+            f"✅ Auto-ban finished.\nSuccessfully banned: **{banned_count}**"
+            f" users.\nFailed/Skipped: **{failed_count}**"
+        )
     )
 
-    # Initial status response
-    status_msg = await ctx.send(f"⏳ Starting DM broadcast to **{len(ctx.guild.members)}** members...")
+  except Exception as ex:
+    await ctx.send(f"❌ An error occurred: {ex}")
 
-    for member in ctx.guild.members:
-        # Skip bots
-        if member.bot:
-            continue
 
-        try:
-            await member.send(embed=embed)
-            successful += 1
-            # 1.5 second delay between DMs to avoid Discord API rate-limits
-            await asyncio.sleep(1.5)
-        except Exception:
-            # Triggers if the user has DMs closed or has blocked the bot
-            failed += 1
+# Pulls the token safely from Render's environment variables
+TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+  raise ValueError("❌ DISCORD_TOKEN environment variable not found!")
 
-    await status_msg.edit(content=f"✅ **DM Broadcast Completed!**\n- **Successfully sent:** `{successful}`\n- **Failed (DMs closed/blocked):** `{failed}`")
-
-# --- ERROR HANDLING ---
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ You do not have permission to use this command.")
-    elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send("❌ Please provide a message to send! Example: `>dmall Hello everyone!`")
-
-# --- START BOT ---
-bot.run(os.getenv('DISCORD_TOKEN'))
+bot.run(TOKEN)
